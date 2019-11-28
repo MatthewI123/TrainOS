@@ -71,15 +71,24 @@ void isr_timer()
         iret;": :"r"(active_proc->esp));
 }
 
-void isr_com1()
-{
-}
-
 void isr_com1_impl()
 {
+    PROCESS p;
+
+    if ((p = interrupt_table[COM1_IRQ]) == NULL)
+        panic("service_intr_0x64: Spurious interrupt");
+
+    if (p->state != STATE_INTR_BLOCKED)
+        panic("service_intr_0x64: No process waiting");
+
+    /* Add event handler to ready queue */
+    add_ready_queue(p);
+
+    /* Dispatch new process */
+    active_proc = dispatcher();
 }
 
-void isr_keyb()
+void isr_com1()
 {
     asm volatile("\
         pushl %%eax;\
@@ -90,7 +99,7 @@ void isr_keyb()
         pushl %%esi;\
         pushl %%edi;\
         movl %%esp,%0;": "=r"(active_proc->esp):);
-    isr_keyb_impl();    
+    isr_com1_impl();    
     asm volatile("\
         movl %0, %%esp;\
         movb $0x20, %%al;\
@@ -118,6 +127,32 @@ void isr_keyb_impl()
     /* Add event handler to ready queue */
     add_ready_queue(waiting);
     active_proc = dispatcher();
+}
+
+void isr_keyb()
+{
+    asm volatile("\
+        pushl %%eax;\
+        pushl %%ecx;\
+        pushl %%edx;\
+        pushl %%ebx;\
+        pushl %%ebp;\
+        pushl %%esi;\
+        pushl %%edi;\
+        movl %%esp,%0;": "=r"(active_proc->esp):);
+    isr_keyb_impl();    
+    asm volatile("\
+        movl %0, %%esp;\
+        movb $0x20, %%al;\
+        outb %%al,$0x20;\
+        popl %%edi;\
+        popl %%esi;\
+        popl %%ebp;\
+        popl %%ebx;\
+        popl %%edx;\
+        popl %%ecx;\
+        popl %%eax;\
+        iret;": :"r"(active_proc->esp));
 }
 
 void wait_for_interrupt(int intr_no)
@@ -229,6 +264,8 @@ void init_interrupts()
     init_idt_entry(15, exception15);
     init_idt_entry(16, exception16);
     init_idt_entry(TIMER_IRQ, isr_timer);
+    init_idt_entry(COM1_IRQ, isr_com1);
+    init_idt_entry(KEYB_IRQ, isr_keyb);
 
     re_program_interrupt_controller();
     interrupts_initialized = TRUE;

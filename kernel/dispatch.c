@@ -10,7 +10,7 @@ void add_ready_queue(PROCESS proc)
 
     assert(proc->used == TRUE);
     assert(proc->magic == MAGIC_PCB);
-    assert(proc->priority >= 1 && proc->priority < MAX_READY_QUEUES);
+    assert(proc->priority >= 0 && proc->priority < MAX_READY_QUEUES);
 
     if (ready_queue[proc->priority]) {
         PROCESS first = ready_queue[proc->priority];
@@ -37,7 +37,7 @@ void remove_ready_queue(PROCESS proc)
 
     assert(proc->used == TRUE);
     assert(proc->magic == MAGIC_PCB);
-    assert(proc->priority >= 1 && proc->priority < MAX_READY_QUEUES);
+    assert(proc->priority >= 0 && proc->priority < MAX_READY_QUEUES);
     
     if (proc->next != proc) {
         proc->prev->next = proc->next;
@@ -54,7 +54,7 @@ void become_zombie()
 {
     assert(active_proc->used == TRUE);
     assert(active_proc->magic == MAGIC_PCB);
-    assert(active_proc->priority >= 1 && active_proc->priority < MAX_READY_QUEUES);
+    assert(active_proc->priority >= 0 && active_proc->priority < MAX_READY_QUEUES);
     active_proc->state = STATE_ZOMBIE;
     remove_ready_queue(active_proc);
     resign();
@@ -72,7 +72,7 @@ PROCESS dispatcher()
         if ((proc = ready_queue[prio]))
             break;
 
-    assert(prio >= 1);
+    assert(prio >= 0);
 
     if (prio == active_proc->priority)
         proc = active_proc->next;

@@ -14,7 +14,7 @@ PORT create_process(void (*ptr_to_new_proc) (PROCESS, PARAM),
     DISABLE_INTR(saved_if);
     proc = next_free;
 
-    assert(prio >= 1 && prio < MAX_READY_QUEUES);
+    assert(prio >= 0 && prio < MAX_READY_QUEUES);
     assert(proc);
 
     next_free = proc->next;
@@ -22,7 +22,7 @@ PORT create_process(void (*ptr_to_new_proc) (PROCESS, PARAM),
 
     proc->magic = MAGIC_PCB;
     proc->esp = (640*1024) - (16*1024)*(proc - &pcb[0]);
-    proc->used = TRUE;
+    proc->used = TRUE;  
     proc->state = STATE_READY;
     proc->priority = prio;
     proc->name = name;
@@ -70,7 +70,7 @@ void print_process(WINDOW * wnd, PROCESS p)
 
     assert(p->used == TRUE);
     assert(p->magic == MAGIC_PCB);
-    assert(p->priority >= 1 && p->priority < MAX_READY_QUEUES);
+    assert(p->priority >= 0 && p->priority < MAX_READY_QUEUES);
     assert(p->state >= 0 && p->state < sizeof(states)/sizeof(const char*));
     output_string(wnd, states[p->state]);
     output_string(wnd, p == active_proc ?
