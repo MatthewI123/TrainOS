@@ -1,42 +1,63 @@
 
 #include <kernel.h>
-#include <lock.h>
 
-PORT_DEF ports[MAX_PORTS];
-static PORT next_free;
+
+PORT_DEF        port[MAX_PORTS];
+
+PORT            next_free_port;
+
+
 
 PORT create_port()
 {
     return create_new_port(active_proc);
 }
 
+
 PORT create_new_port(PROCESS owner)
 {
-    PORT port;
-    CPU_LOCK();
-    port = next_free;
+    PORT            p;
+    volatile int    flag;
 
+    DISABLE_INTR(flag);
     assert(owner->magic == MAGIC_PCB);
-    assert(port);
-
-    next_free = port->next;
-    port->magic = MAGIC_PORT;
-    port->used = TRUE;
-    port->open = TRUE;
-    port->owner = owner;
-    port->blocked_list_head = NULL;
-    port->blocked_list_tail = NULL;
-
-    if (owner->first_port)
-        port->next = owner->first_port;
+    if (next_free_port == NULL)
+        panic("create_new_port(): PORT full");
+    p = next_free_port;
+    next_free_port = p->next;
+    p->used = TRUE;
+    p->magic = MAGIC_PORT;
+    p->owner = owner;
+    p->blocked_list_head = NULL;
+    p->blocked_list_tail = NULL;
+    p->open = TRUE;
+    if (owner->first_port == NULL)
+        p->next = NULL;
     else
-        port->next = NULL;
-    
-    owner->first_port = port;
+        p->next = owner->first_port;
+    owner->first_port = p;
+    ENABLE_INTR(flag);
 
-    CPU_UNLOCK();
-    return port;
+    return p;
 }
+
+
+void add_to_send_blocked_list(PORT port, PROCESS proc)
+{
+    volatile int    flag;
+
+    DISABLE_INTR(flag);
+    assert(port->magic == MAGIC_PORT);
+    assert(proc->magic == MAGIC_PCB);
+    if (port->blocked_list_head == NULL)
+        port->blocked_list_head = proc;
+    else
+        port->blocked_list_tail->next_blocked = proc;
+    port->blocked_list_tail = proc;
+    proc->next_blocked = NULL;
+    ENABLE_INTR(flag);
+}
+
 
 void open_port(PORT port)
 {
@@ -44,157 +65,155 @@ void open_port(PORT port)
     port->open = TRUE;
 }
 
+
+
 void close_port(PORT port)
 {
     assert(port->magic == MAGIC_PORT);
     port->open = FALSE;
 }
 
-static void send_block(PORT port, PROCESS invoker)
+
+void send(PORT dest_port, void *data)
 {
-    assert(port->magic == MAGIC_PORT);
-    assert(invoker->magic == MAGIC_PCB);
+    PROCESS         dest;
+    volatile int    flag;
 
-    if (port->blocked_list_head)
-        port->blocked_list_tail->next_blocked = invoker;
-    else
-        port->blocked_list_head = invoker;
-    
-    port->blocked_list_tail = invoker;
-    invoker->next_blocked = NULL;
-}
-
-void send(PORT dest_port, void *data) 
-{
-    PROCESS owner;
-    CPU_LOCK();
-    owner = dest_port->owner;
-
+    DISABLE_INTR(flag);
     assert(dest_port->magic == MAGIC_PORT);
-    assert(owner->magic == MAGIC_PCB);
-    assert(active_proc->magic == MAGIC_PCB);
-    assert(active_proc->state == STATE_READY);
+    dest = dest_port->owner;
+    assert(dest->magic == MAGIC_PCB);
 
-    if (dest_port->open && owner->state == STATE_RECEIVE_BLOCKED) {
-        // port is open and owner is waiting via receive()
-        owner->param_proc = active_proc;
-        owner->param_data = data;
+    if (dest_port->open && dest->state == STATE_RECEIVE_BLOCKED) {
+        /* 
+         * Receiver is receive blocked. We can deliver our message
+         * immediately.
+         */
+        dest->param_proc = active_proc;
+        dest->param_data = data;
         active_proc->state = STATE_REPLY_BLOCKED;
-        add_ready_queue(owner);
+        add_ready_queue(dest);
     } else {
-        // port is closed or owner is not waiting via receive()
+        /* 
+         * Receiver is busy or the port is closed.
+         * Get on the send blocked queue of the port.
+         */
+        add_to_send_blocked_list(dest_port, active_proc);
         active_proc->state = STATE_SEND_BLOCKED;
         active_proc->param_data = data;
-        send_block(dest_port, active_proc);
     }
-
     active_proc->param_data = data;
     remove_ready_queue(active_proc);
     resign();
-    CPU_UNLOCK();
+    ENABLE_INTR(flag);
 }
+
 
 void message(PORT dest_port, void *data)
 {
-    PROCESS owner;
-    CPU_LOCK();
-    owner = dest_port->owner;
+    PROCESS         dest;
+    volatile int    flag;
 
+    DISABLE_INTR(flag);
     assert(dest_port->magic == MAGIC_PORT);
-    assert(owner->magic == MAGIC_PCB);
-    assert(active_proc->magic == MAGIC_PCB);
-    assert(active_proc->state == STATE_READY);
+    dest = dest_port->owner;
+    assert(dest->magic == MAGIC_PCB);
 
-    if (dest_port->open && owner->state == STATE_RECEIVE_BLOCKED) {
-        // port is open and owner is waiting via receive()
-        owner->param_proc = active_proc;
-        owner->param_data = data;
-        add_ready_queue(owner);
+    if (dest_port->open && dest->state == STATE_RECEIVE_BLOCKED) {
+        dest->param_proc = active_proc;
+        dest->param_data = data;
+        add_ready_queue(dest);
     } else {
-        // port is closed or owner is not waiting via receive
+        /* 
+         * Receiver is busy or the port is closed.
+         * Get on the send blocked queue of the port.
+         */
+        add_to_send_blocked_list(dest_port, active_proc);
+        remove_ready_queue(active_proc);
         active_proc->state = STATE_MESSAGE_BLOCKED;
         active_proc->param_data = data;
-        remove_ready_queue(active_proc);
-        send_block(dest_port, active_proc);
     }
-
     resign();
-    CPU_UNLOCK();
+    ENABLE_INTR(flag);
 }
 
-void* receive(PROCESS * sender)
+
+
+void           *receive(PROCESS * sender)
 {
-    PORT port;
-    void* data;
-    CPU_LOCK();
+    PROCESS         deliver_proc;
+    PORT            port;
+    void           *data;
+    volatile int    flag;
+
+    DISABLE_INTR(flag);
+    data = NULL;
     port = active_proc->first_port;
-
-    assert(active_proc->magic == MAGIC_PCB);
-    assert(active_proc->state == STATE_READY);
-    assert(port);
-
-    // get first open port with a message
-    for (; port; port = port->next) {
+    if (port == NULL)
+        panic("receive(): no port created for this process");
+    while (port != NULL) {
         assert(port->magic == MAGIC_PORT);
-
-        if (port->open && port->blocked_list_head)
+        if (port->open && port->blocked_list_head != NULL)
             break;
+        port = port->next;
     }
 
-    if (port) { // message on port
-        PROCESS invoker = port->blocked_list_head;
-        assert(invoker->magic == MAGIC_PCB);
-
-        *sender = invoker;
-        port->blocked_list_head = invoker->next_blocked;
-
-        if (!port->blocked_list_head)
+    if (port != NULL) {
+        deliver_proc = port->blocked_list_head;
+        assert(deliver_proc->magic == MAGIC_PCB);
+        *sender = deliver_proc;
+        data = deliver_proc->param_data;
+        port->blocked_list_head = port->blocked_list_head->next_blocked;
+        if (port->blocked_list_head == NULL)
             port->blocked_list_tail = NULL;
-        
-        if (invoker->state == STATE_SEND_BLOCKED) {
-            invoker->state = STATE_REPLY_BLOCKED;
-            data = invoker->param_data;
-            CPU_UNLOCK();
+
+        if (deliver_proc->state == STATE_MESSAGE_BLOCKED) {
+            add_ready_queue(deliver_proc);
+            ENABLE_INTR(flag);
             return data;
-        } else if (invoker->state == STATE_MESSAGE_BLOCKED) {
-            add_ready_queue(invoker);
-            data = invoker->param_data;
-            CPU_UNLOCK();
+        } else if (deliver_proc->state == STATE_SEND_BLOCKED) {
+            deliver_proc->state = STATE_REPLY_BLOCKED;
+            ENABLE_INTR(flag);
             return data;
-        } else {
-            assert(0);
         }
-    } else { // no messages, block
-        remove_ready_queue(active_proc);
-        active_proc->param_data = NULL;
-        active_proc->state = STATE_RECEIVE_BLOCKED;
-        resign(); // resumed on message/send
-        *sender = active_proc->param_proc;
-        data = active_proc->param_data;
-        CPU_UNLOCK();
-        return data;
     }
+
+    /* No messages pending */
+    remove_ready_queue(active_proc);
+    active_proc->param_data = data;
+    active_proc->state = STATE_RECEIVE_BLOCKED;
+    resign();
+    *sender = active_proc->param_proc;
+    data = active_proc->param_data;
+    ENABLE_INTR(flag);
+    return data;
 }
+
 
 void reply(PROCESS sender)
 {
-    CPU_LOCK();
-    assert(sender->magic == MAGIC_PCB);
-    assert(sender->state == STATE_REPLY_BLOCKED);
+    volatile int    flag;
+
+    DISABLE_INTR(flag);
+    if (sender->state != STATE_REPLY_BLOCKED)
+        panic("reply(): Not reply blocked");
     add_ready_queue(sender);
     resign();
-    CPU_UNLOCK();
+    ENABLE_INTR(flag);
 }
+
 
 void init_ipc()
 {
-    for (int idx = 0; idx < MAX_PORTS; idx++) {
-        ports[idx].magic = 0;
-        ports[idx].used = FALSE;
-        ports[idx].open = FALSE;
-        ports[idx].next = &ports[idx + 1];
-    }
+    int             i;
 
-    ports[MAX_PORTS - 1].next = NULL;
-    next_free = &ports[0];
+    next_free_port = port;
+    for (i = 0; i < MAX_PORTS - 1; i++) {
+        port[i].used = FALSE;
+        port[i].magic = MAGIC_PORT;
+        port[i].next = &port[i + 1];
+    }
+    port[MAX_PORTS - 1].used = FALSE;
+    port[MAX_PORTS - 1].magic = MAGIC_PORT;
+    port[MAX_PORTS - 1].next = NULL;
 }

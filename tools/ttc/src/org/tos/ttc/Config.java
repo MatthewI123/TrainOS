@@ -23,7 +23,7 @@ public class Config
     {
 	String cmd = "bochs";
 	try {
-	    java.lang.Runtime.getRuntime().exec(new String[]{cmd, "-q", "-f", "gdb-bochsrc"});
+	    java.lang.Runtime.getRuntime().exec(new String[]{cmd, "-q"/*, "-f", "gdb-bochsrc"*/});
 	}
 	catch (Exception e) {
 	    System.err.println("Caught exception while trying to start bochs: "

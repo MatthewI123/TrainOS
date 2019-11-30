@@ -1,59 +1,61 @@
 
 #include <kernel.h>
 
-#define SCREEN_BASE 0xB8000
-#define ROWS 25
-#define COLS 80
-#define RESOLVE(wnd, x, y) COLS*(wnd->y + y) + wnd->x + x
 
-enum FG_FLAGS
+#define SCREEN_BASE_ADDR 0xb8000
+#define SCREEN_WIDTH     80
+#define SCREEN_HEIGHT    25
+
+
+WORD            default_color = 0x0f;
+
+
+
+void poke_screen(int x, int y, WORD ch)
 {
-    FG_R = 0x01,
-    FG_G = 0x02,
-    FG_B = 0x04,
-    FG_BRIGHT = 0x08,
-    FG_BLACK = 0x00,
-    FG_WHITE = 0x0F // bright by default
-};
-
-enum BG_FLAGS
-{
-    BG_R = 0x10,
-    BG_G = 0x20,
-    BG_B = 0x40,
-    BG_BLINK = 0x80,
-    BG_BLACK = 0x00,
-    BG_WHITE = 0x70
-};
-
-#define BLANK BG_BLACK | FG_BLACK
-
-typedef struct char_t
-{
-    char chr;
-    char attrib;
-} __attribute__((packed)) char_t;
-
-char_t* video_memory = (char_t*)SCREEN_BASE;
-
-static char_t read_char(WINDOW * wnd, int x, int y)
-{
-    assert(x >= 0 && x < wnd->width);
-    assert(y >= 0 && y < wnd->height);
-    return video_memory[RESOLVE(wnd, x, y)];
+    poke_w(SCREEN_BASE_ADDR + y * SCREEN_WIDTH * 2 + x * 2, ch);
 }
 
-static void write_char(WINDOW * wnd, int x, int y, char_t chr)
+
+
+WORD peek_screen(int x, int y)
 {
-    assert(x >= 0 && x < wnd->width);
-    assert(y >= 0 && y < wnd->height);
-    video_memory[RESOLVE(wnd, x, y)] = chr;
+    return peek_w(SCREEN_BASE_ADDR + y * SCREEN_WIDTH * 2 + x * 2);
 }
+
+
+
+void scroll_window(WINDOW * wnd)
+{
+    int             x,
+                    y;
+    int             wx,
+                    wy;
+    volatile int    flag;
+
+    DISABLE_INTR(flag);
+    for (y = 0; y < wnd->height - 1; y++) {
+        wy = wnd->y + y;
+        for (x = 0; x < wnd->width; x++) {
+            wx = wnd->x + x;
+            WORD            ch = peek_screen(wx, wy + 1);
+            poke_screen(wx, wy, ch);
+        }
+    }
+    wy = wnd->y + wnd->height - 1;
+    for (x = 0; x < wnd->width; x++) {
+        wx = wnd->x + x;
+        poke_screen(wx, wy, 0);
+    }
+    wnd->cursor_x = 0;
+    wnd->cursor_y = wnd->height - 1;
+    ENABLE_INTR(flag);
+}
+
 
 void move_cursor(WINDOW * wnd, int x, int y)
 {
-    assert(x >= 0 && x < wnd->width);
-    assert(y >= 0 && y < wnd->height);
+    assert(x < wnd->width && y < wnd->height);
     wnd->cursor_x = x;
     wnd->cursor_y = y;
 }
@@ -61,102 +63,86 @@ void move_cursor(WINDOW * wnd, int x, int y)
 
 void remove_cursor(WINDOW * wnd)
 {
-    assert(wnd->cursor_x >= 0 && wnd->cursor_x < wnd->width);
-    assert(wnd->cursor_y >= 0 && wnd->cursor_y < wnd->height);
-    write_char(wnd, wnd->cursor_x, wnd->cursor_y, (char_t){ .attrib = BLANK });
+    poke_screen(wnd->x + wnd->cursor_x, wnd->y + wnd->cursor_y, ' ');
 }
 
 
 void show_cursor(WINDOW * wnd)
 {
-    assert(wnd->cursor_x >= 0 && wnd->cursor_x < wnd->width);
-    assert(wnd->cursor_y >= 0 && wnd->cursor_y < wnd->height);
-    write_char(wnd, wnd->cursor_x, wnd->cursor_y, (char_t){
-        .chr = wnd->cursor_char, .attrib = FG_WHITE });
+    poke_screen(wnd->x + wnd->cursor_x,
+                wnd->y + wnd->cursor_y,
+                wnd->cursor_char | (default_color << 8));
 }
 
 
 void clear_window(WINDOW * wnd)
 {
-    volatile int saved_if;
-    DISABLE_INTR(saved_if);
-    for (int i = 0; i < wnd->width; ++i)
-        for (int j = 0; j < wnd->height; ++j)
-            write_char(wnd, i, j, (char_t){ .attrib = BLANK });
-    
+    int             x,
+                    y;
+    int             wx,
+                    wy;
+
+    volatile int    flag;
+
+    DISABLE_INTR(flag);
     wnd->cursor_x = 0;
     wnd->cursor_y = 0;
+    for (y = 0; y < wnd->height; y++) {
+        wy = wnd->y + y;
+        for (x = 0; x < wnd->width; x++) {
+            wx = wnd->x + x;
+            poke_screen(wx, wy, 0);
+        }
+    }
     show_cursor(wnd);
-    ENABLE_INTR(saved_if);
+    ENABLE_INTR(flag);
 }
 
-static void prev_line(WINDOW * wnd)
-{
-    assert(wnd->cursor_x >= 0 && wnd->cursor_x < wnd->width);
-    assert(wnd->cursor_y >= 0 && wnd->cursor_y < wnd->height);
-
-    if (wnd->cursor_y > 0) {
-        wnd->cursor_x = wnd->width - 1;
-        wnd->cursor_y -= 1;
-    } else {
-        wnd->cursor_x = 0;
-    }
-}
-
-static void next_line(WINDOW * wnd)
-{
-    assert(wnd->cursor_y >= 0 && wnd->cursor_y < wnd->height);
-
-    if (wnd->cursor_y == wnd->height - 1) {
-        for (int i = 0; i < wnd->width; ++i)
-            for (int j = 0; j < wnd->height - 1; ++j)
-                write_char(wnd, i, j, read_char(wnd, i, j + 1));
-        
-        for (int i = 0; i < wnd->width; ++i)
-            write_char(wnd, i, wnd->height - 1, (char_t){ .attrib = BLANK });
-    } else {
-        wnd->cursor_y += 1;
-    }
-
-    wnd->cursor_x = 0;
-}
 
 void output_char(WINDOW * wnd, unsigned char c)
 {
-    volatile int saved_if;
-    DISABLE_INTR(saved_if);
-    assert(wnd->cursor_x >= 0 && wnd->cursor_x < wnd->width);
-    assert(wnd->cursor_y >= 0 && wnd->cursor_y < wnd->height);
+    volatile int    flag;
 
+    DISABLE_INTR(flag);
+    remove_cursor(wnd);
     switch (c) {
-        case '\r':
-        case '\n':
-            next_line(wnd);
-            break;
-        case '\b':
-            if (wnd->cursor_x == 0)
-                prev_line(wnd);
-            else
-                wnd->cursor_x -= 1;
-            break;
-        default:
-            write_char(wnd, wnd->cursor_x, wnd->cursor_y, (char_t){ .chr = c,
-                .attrib = FG_WHITE });
-            wnd->cursor_x += 1;
-            break;
+    case '\n':
+    case 13:
+        wnd->cursor_x = 0;
+        wnd->cursor_y++;
+        break;
+    case '\b':
+        if (wnd->cursor_x != 0) {
+            wnd->cursor_x--;
+        } else {
+            if (wnd->cursor_y != 0) {
+                wnd->cursor_x = wnd->width - 1;
+                wnd->cursor_y--;
+            }
+        }
+        break;
+    default:
+        poke_screen(wnd->x + wnd->cursor_x,
+                    wnd->y + wnd->cursor_y,
+                    (short unsigned int) c | (default_color << 8));
+        wnd->cursor_x++;
+        if (wnd->cursor_x == wnd->width) {
+            wnd->cursor_x = 0;
+            wnd->cursor_y++;
+        }
+        break;
     }
-
-    if (wnd->cursor_x == wnd->width)
-        next_line(wnd);
+    if (wnd->cursor_y == wnd->height)
+        scroll_window(wnd);
     show_cursor(wnd);
-    ENABLE_INTR(saved_if);
+    ENABLE_INTR(flag);
 }
 
 
 
 void output_string(WINDOW * wnd, const char *str)
 {
-    while (*str)
+    while (*str != '\0')
         output_char(wnd, *str++);
 }
 

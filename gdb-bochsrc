@@ -353,7 +353,7 @@ cpu: model=p3_katmai
 # used all allocated host memory and wants more.
 #
 #=======================================================================
-memory: guest=1, host=2
+memory: guest=8, host=2
 
 #=======================================================================
 # ROMIMAGE:

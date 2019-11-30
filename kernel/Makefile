@@ -27,6 +27,11 @@ lib.o: $(OBJS)
 lib: lib.o
 	cp lib.o ../lib/kernel.o
 
+disptable.c: gentable.cc
+	$(CPP_HOST) gentable.cc -o gentable
+	./gentable > disptable.c
+	rm -f gentable
+
 indent:
 	indent -nbad -nbap -bbo -bc -br -brs -c33 -cd33 -ce -ci4 -cli0 \
                -cp33 -di16 -fc1 -fca -hnl -i4 -ip4 -l75 -lp -npcs -nprs \

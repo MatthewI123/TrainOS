@@ -1,43 +1,55 @@
+
 #include <kernel.h>
 
-PORT timer_port;
+
+PORT            timer_port;
 
 void timer_notifier(PROCESS self, PARAM param)
 {
-    while (1) {
+    while (42) {
         wait_for_interrupt(TIMER_IRQ);
-        message(timer_port, NULL);
+        message(timer_port, 0);
     }
+    become_zombie();
 }
 
 void timer_process(PROCESS self, PARAM param)
 {
-    int counters[MAX_PROCS] = { 0 };
-    Timer_Message* msg;
-    PROCESS sender;
+    int             ticks_left[MAX_PROCS];
+    Timer_Message  *msg;
+    PROCESS         sender;
+    int             i;
+
+    for (i = 0; i < MAX_PROCS; i++)
+        ticks_left[i] = 0;
 
     create_process(timer_notifier, 7, 0, "Timer notifier");
 
-    while (1) {
-        msg = (Timer_Message*)receive(&sender);
-
-        if (msg == NULL) { //invoked by timer interrupt (see timer_notifier)
-            for (int i = 0; i < MAX_PROCS; ++i) {
-                if (counters[i] == 0) {
+    while (42) {
+        msg = (Timer_Message *) receive(&sender);
+        if (msg == NULL) {
+            // The timer notifier sent us a message
+            for (i = 0; i < MAX_PROCS; i++) {
+                if (ticks_left[i] == 0)
                     continue;
-                } else if (--counters[i] == 0) {
+                if (--ticks_left[i] == 0) {
+                    // Wake up client
                     reply(&pcb[i]);
                 }
             }
-        } else { // from client
-            counters[sender - &pcb[0]] = msg->num_of_ticks;
+        } else {
+            // A client sent us a message
+            i = sender - pcb;
+            ticks_left[i] = msg->num_of_ticks;
         }
     }
+    become_zombie();
 }
+
 
 void sleep(int ticks)
 {
-    Timer_Message msg;
+    Timer_Message   msg;
     msg.num_of_ticks = ticks;
     send(timer_port, &msg);
 }

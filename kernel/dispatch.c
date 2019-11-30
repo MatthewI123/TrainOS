@@ -1,124 +1,208 @@
-#include <kernel.h>
-#include <lock.h>
 
-PROCESS active_proc;
-PCB* ready_queue[MAX_READY_QUEUES];
+#include <kernel.h>
+
+#include "disptable.c"
+
+
+PROCESS         active_proc;
+
+
+/* 
+ * Ready queues for all eight priorities.
+ */
+PCB            *ready_queue[MAX_READY_QUEUES];
+
+/* 
+ * The bits in ready_procs tell which ready queue is empty.
+ * The MSB of ready_procs corresponds to ready_queue[7].
+ */
+unsigned        ready_procs;
+
+
+
+/* 
+ * add_ready_queue
+ *----------------------------------------------------------------------------
+ * The process pointed to by p is put the ready queue.
+ * The appropiate ready queue is determined by p->priority.
+ */
 
 void add_ready_queue(PROCESS proc)
 {
-    CPU_LOCK();
+    int             prio;
+    volatile int    flag;
 
-    assert(proc->used == TRUE);
+    DISABLE_INTR(flag);
     assert(proc->magic == MAGIC_PCB);
-    assert(proc->priority >= 0 && proc->priority < MAX_READY_QUEUES);
-
-    if (ready_queue[proc->priority]) {
-        PROCESS first = ready_queue[proc->priority];
-        PROCESS last = first->prev;
-
-        first->prev = proc;
-        last->next = proc;
-        proc->prev = last;
-        proc->next = first;
-    } else {
-        ready_queue[proc->priority] = proc;
-        proc->prev = proc;
+    prio = proc->priority;
+    if (ready_queue[prio] == NULL) {
+        /* The only process on this priority level */
+        ready_queue[prio] = proc;
         proc->next = proc;
+        proc->prev = proc;
+        ready_procs |= 1 << prio;
+    } else {
+        /* Some other processes on this priority level */
+        proc->next = ready_queue[prio];
+        proc->prev = ready_queue[prio]->prev;
+        ready_queue[prio]->prev->next = proc;
+        ready_queue[prio]->prev = proc;
     }
-
     proc->state = STATE_READY;
-
-    CPU_UNLOCK();
+    ENABLE_INTR(flag);
 }
+
+
+
+/* 
+ * remove_ready_queue
+ *----------------------------------------------------------------------------
+ * The process pointed to by p is dequeued from the ready
+ * queue.
+ */
 
 void remove_ready_queue(PROCESS proc)
 {
-    CPU_LOCK();
+    int             prio;
+    volatile int    flag;
 
-    assert(proc->used == TRUE);
+    DISABLE_INTR(flag);
     assert(proc->magic == MAGIC_PCB);
-    assert(proc->priority >= 0 && proc->priority < MAX_READY_QUEUES);
-    
-    if (proc->next != proc) {
-        proc->prev->next = proc->next;
-        proc->next->prev = proc->prev;
-        ready_queue[proc->priority] = proc->next;
+    prio = proc->priority;
+    if (proc->next == proc) {
+        /* No further processes on this priority level */
+        ready_queue[prio] = NULL;
+        ready_procs &= ~(1 << prio);
     } else {
-        ready_queue[proc->priority] = NULL;
+        ready_queue[prio] = proc->next;
+        proc->next->prev = proc->prev;
+        proc->prev->next = proc->next;
     }
-    
-    CPU_UNLOCK();
+    ENABLE_INTR(flag);
 }
+
+
+
+/* 
+ * become_zombie
+ *----------------------------------------------------------------------------
+ * Turns the calling process into a zombie. It will be removed from the ready
+ * queue and marked as being in STATE_ZOMBIE.
+ */
 
 void become_zombie()
 {
-    assert(active_proc->used == TRUE);
-    assert(active_proc->magic == MAGIC_PCB);
-    assert(active_proc->priority >= 0 && active_proc->priority < MAX_READY_QUEUES);
     active_proc->state = STATE_ZOMBIE;
     remove_ready_queue(active_proc);
     resign();
-    assert(0);
+    // Never reached
+    while (1);
 }
+
+
+
+/* 
+ * dispatcher
+ *----------------------------------------------------------------------------
+ * Determines a new process to be dispatched. The process
+ * with the highest priority is taken. Within one priority
+ * level round robin is used.
+ */
 
 PROCESS dispatcher()
 {
-    PROCESS proc;
-    int prio;
+    PROCESS         new_proc;
+    unsigned        i;
+    volatile int    flag;
 
-    CPU_LOCK();
+    DISABLE_INTR(flag);
 
-    for (prio = MAX_READY_QUEUES - 1; prio >= 1; --prio)
-        if ((proc = ready_queue[prio]))
-            break;
-
-    assert(prio >= 0);
-
-    if (prio == active_proc->priority)
-        proc = active_proc->next;
-
-    CPU_UNLOCK();
-
-    return proc;
+    /* Find queue with highest priority that is not empty */
+    i = table[ready_procs];
+    assert(i != -1);
+    if (i == active_proc->priority)
+        /* Round robin within the same priority level */
+        new_proc = active_proc->next;
+    else
+        /* Dispatch a process at a different priority level */
+        new_proc = ready_queue[i];
+    ENABLE_INTR(flag);
+    return new_proc;
 }
 
+
+
+/* 
+ * resign
+ *----------------------------------------------------------------------------
+ * The current process gives up the CPU voluntarily. The
+ * next running process is determined via dispatcher().
+ * The stack of the calling process is setup such that it
+ * looks like an interrupt.
+ */
 void resign()
 {
-    asm volatile("\
-        pushfl;\
-        cli;\
-        pop %%eax;\
-        xchg (%%esp), %%eax;\
-        pushl %%cs;\
-        pushl %%eax;\
-        pushl %%eax;\
-        pushl %%ecx;\
-        pushl %%edx;\
-        pushl %%ebx;\
-        pushl %%ebp;\
-        pushl %%esi;\
-        pushl %%edi;\
-        movl %%esp,%0;": "=r"(active_proc->esp):);
+    /* 
+     *  PUSHFL
+     *  CLI
+     *  POPL    %EAX            ; EAX = Flags
+     *  XCHGL   (%ESP),%EAX     ; Swap return adr with flags
+     *  PUSH    %CS             ; Push CS
+     *  PUSHL   %EAX            ; Push return address
+     *  PUSHL   %EAX            ; Save process' context
+     *  PUSHL   %ECX
+     *  PUSHL   %EDX
+     *  PUSHL   %EBX
+     *  PUSHL   %EBP
+     *  PUSHL   %ESI
+     *  PUSHL   %EDI
+     */
+    asm("pushfl;cli;popl %eax;xchgl (%esp),%eax");
+    asm("push %cs;pushl %eax");
+    asm("pushl %eax;pushl %ecx;pushl %edx");
+    asm("pushl %ebx;pushl %ebp;pushl %esi;pushl %edi");
 
+    /* Save the context pointer SS:ESP to the PCB */
+  asm("movl %%esp,%0": "=r"(active_proc->esp):);
+
+    /* Dispatch new process */
     active_proc = dispatcher();
 
-    // restore context of new proc
-    asm volatile("\
-        movl %0, %%esp;\
-        popl %%edi;\
-        popl %%esi;\
-        popl %%ebp;\
-        popl %%ebx;\
-        popl %%edx;\
-        popl %%ecx;\
-        popl %%eax;\
-        iret;": :"r"(active_proc->esp));
+    /* Restore context pointer SS:ESP */
+  asm("movl %0,%%esp": :"r"(active_proc->esp));
+
+    /* 
+     *  POPL  %EDI      ; Restore previously saved context
+     *  POPL  %ESI
+     *  POPL  %EBP
+     *  POPL  %EBX
+     *  POPL  %EDX
+     *  POPL  %ECX
+     *  POPL  %EAX
+     *  IRET            ; Return to new process
+     */
+    asm("popl %edi;popl %esi;popl %ebp;popl %ebx");
+    asm("popl %edx;popl %ecx;popl %eax");
+    asm("iret");
 }
+
+
+
+/* 
+ * init_dispatcher
+ *----------------------------------------------------------------------------
+ * Initializes the necessary data structures.
+ */
 
 void init_dispatcher()
 {
-    for (int idx = 0; idx < MAX_READY_QUEUES; idx++)
-        ready_queue[idx] = NULL;
+    int             i;
 
+    for (i = 0; i < MAX_READY_QUEUES; i++)
+        ready_queue[i] = NULL;
+
+    ready_procs = 0;
+
+    /* Setup first process */
     add_ready_queue(active_proc);
 }

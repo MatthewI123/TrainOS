@@ -1,10 +1,10 @@
 
 #include <kernel.h>
 
+
 void null_process(PROCESS self, PARAM param)
 {
-    // to-do: HLT
-    while (1) { }
+    while (42);
     become_zombie();
 }
 
