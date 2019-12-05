@@ -1,6 +1,5 @@
 // Matthew Ibrahim - 916771224
 // to-do: window resizing?
-// to-do: train application
 // to-do: refactor into multiple files after submission (ideally, implement a subset of the C stdlib)
 
 #include <kernel.h>
@@ -118,6 +117,7 @@ int handle_command(int window_id, const char* buff, char* history[HISTORY_SIZE])
 		wm_print(window_id, "help  Displays this help message.\n");
 		wm_print(window_id, "clear  Clears the console.\n");
 		wm_print(window_id, "pong  Opens pong.\n");
+        wm_print(window_id, "train  Runs the train application.\n");
 		wm_print(window_id, "shell  Opens another shell instance.\n");
 		wm_print(window_id, "echo [...]  Prints message.\n");
 		wm_print(window_id, "ps  Displays processes.\n");
@@ -127,6 +127,8 @@ int handle_command(int window_id, const char* buff, char* history[HISTORY_SIZE])
 		wm_clear(window_id);
 	} else if (k_memcmp(buff, "pong", sizeof("pong")) == 0) {
 		start_pong();
+    } else if (k_memcmp(buff, "train", sizeof("train")) == 0) {
+        init_train();
 	} else if (k_memcmp(buff, "shell", sizeof("shell")) == 0) {
 		start_shell();
 	} else if (k_memcmp(buff, "echo ", sizeof("echo")) == 0) {
