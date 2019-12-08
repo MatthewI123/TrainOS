@@ -249,87 +249,140 @@ void train_wait_for_contact(int id, probe_state_t state)
 
 void train_handler_cfg1(int windowID, zomboni_state_t zomboni)
 {
-    if (zomboni == ZOMBONI_STATE_VALID) {
-        wm_print(windowID, "> waiting for zomboni...\n");
+    if (zomboni == ZOMBONI_STATE_VALID)
         train_wait_for_contact(10, PROBE_STATE_OCCUPIED);
-    }
 
     train_change_speed(5);
-    train_change_switch(2, SWITCH_STATE_RED);
     train_change_switch(5, SWITCH_STATE_RED);
     train_change_switch(6, SWITCH_STATE_GREEN);
     train_change_switch(7, SWITCH_STATE_RED);
+
     train_wait_for_contact(7, PROBE_STATE_OCCUPIED);
     train_wait_for_contact(7, PROBE_STATE_EMPTY);
-    sleep(5);
     train_change_switch(5, SWITCH_STATE_GREEN);
-    train_wait_for_contact(12, PROBE_STATE_OCCUPIED);
-    sleep(15);
-    train_change_speed(0);
-    train_change_direction();
 
-    if (zomboni == ZOMBONI_STATE_VALID) {
-        wm_print(windowID, "> waiting for zamboni...\n");
-        train_wait_for_contact(10, PROBE_STATE_OCCUPIED);
-    }
+    train_change_speed(0);
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(3, PROBE_STATE_OCCUPIED);
 
     train_change_speed(5);
-
-    if (zomboni == ZOMBONI_STATE_VALID) {
-        wm_print(windowID, "> waiting for zamboni...\n");
-        train_wait_for_contact(7, PROBE_STATE_OCCUPIED);
-    }
+    train_wait_for_contact(12, PROBE_STATE_EMPTY);
+    train_change_speed(0);
+    train_change_direction();
+    train_change_speed(5);
+    train_change_switch(3, SWITCH_STATE_RED);
+    train_change_switch(4, SWITCH_STATE_RED);
 
     train_wait_for_contact(6, PROBE_STATE_OCCUPIED);
     train_change_speed(0);
-    train_change_switch(3, SWITCH_STATE_RED);
-    train_change_switch(4, SWITCH_STATE_RED);
     train_change_direction();
     train_change_speed(5);
-    sleep(100);
+    train_wait_for_contact(6, PROBE_STATE_EMPTY);
+    train_change_switch(4, SWITCH_STATE_GREEN);
     train_change_speed(0);
 }
 
 
 void train_handler_cfg2(int windowID, zomboni_state_t zomboni)
 {
-    if (zomboni == ZOMBONI_STATE_VALID) {
-        wm_print(windowID, "> waiting for zamboni...\n");
+    if (zomboni == ZOMBONI_STATE_VALID)
         train_wait_for_contact(14, PROBE_STATE_OCCUPIED);
-    }
 
     train_change_speed(5);
 
-    if (zomboni == ZOMBONI_STATE_VALID) {
-        wm_print(windowID, "> waiting for zamboni...\n");
-        train_wait_for_contact(6, PROBE_STATE_OCCUPIED);
-    }
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(4, PROBE_STATE_OCCUPIED);
 
-    train_wait_for_contact(7, PROBE_STATE_OCCUPIED);
     train_change_switch(3, SWITCH_STATE_GREEN);
     train_change_switch(4, SWITCH_STATE_RED);
-    train_wait_for_contact(1, PROBE_STATE_OCCUPIED);
+    train_wait_for_contact(2, PROBE_STATE_EMPTY);
     train_change_speed(0);
     train_change_switch(4, SWITCH_STATE_GREEN);
 
-
-    if (zomboni == ZOMBONI_STATE_VALID) {
-        wm_print(windowID, "> waiting for zamboni...\n");
+    if (zomboni == ZOMBONI_STATE_VALID)
         train_wait_for_contact(14, PROBE_STATE_OCCUPIED);
-    }
 
     train_change_speed(5);
-    train_wait_for_contact(10, PROBE_STATE_OCCUPIED);
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(10, PROBE_STATE_OCCUPIED);
+
     train_change_switch(8, SWITCH_STATE_RED);
-    train_wait_for_contact(11, PROBE_STATE_OCCUPIED);
-    train_change_speed(0);
+    train_wait_for_contact(13, PROBE_STATE_OCCUPIED);
     train_change_switch(8, SWITCH_STATE_GREEN);
+    train_change_speed(0);
 }
 
 void train_handler_cfg3(int windowID, zomboni_state_t zomboni)
 {
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(14, PROBE_STATE_OCCUPIED);
+    
+    train_change_speed(5);
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(4, PROBE_STATE_OCCUPIED);
+    
+    train_change_switch(3, SWITCH_STATE_GREEN);
+    train_change_switch(4, SWITCH_STATE_RED);
+    train_wait_for_contact(2, PROBE_STATE_EMPTY);
+    train_change_speed(0);
+    train_change_switch(4, SWITCH_STATE_GREEN);
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(10, PROBE_STATE_OCCUPIED);
+    
+    train_change_speed(5);
+    train_wait_for_contact(14, PROBE_STATE_OCCUPIED);
+    train_change_speed(0);
+    train_change_switch(9, SWITCH_STATE_GREEN);
+    train_change_direction();
+    train_change_speed(5);
+    train_wait_for_contact(14, PROBE_STATE_EMPTY);
+    train_change_speed(0);
+    train_change_switch(9, SWITCH_STATE_RED);
 }
 
 void train_handler_cfg4(int windowID, zomboni_state_t zomboni)
 {
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(14, PROBE_STATE_OCCUPIED);
+    
+    train_change_speed(5);
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(7, PROBE_STATE_OCCUPIED);
+
+    train_change_switch(5, SWITCH_STATE_RED);
+    train_change_switch(6, SWITCH_STATE_RED);
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(6, PROBE_STATE_OCCUPIED);
+
+    train_wait_for_contact(7, PROBE_STATE_OCCUPIED);
+    train_change_speed(0);
+    train_change_direction();
+    train_change_speed(5);
+    train_wait_for_contact(7, PROBE_STATE_EMPTY);
+    train_change_speed(0);
+    train_change_switch(5, SWITCH_STATE_GREEN);
+    train_change_direction();
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(7, PROBE_STATE_OCCUPIED);
+    
+    train_change_speed(5);
+
+    if (zomboni == ZOMBONI_STATE_VALID)
+        train_wait_for_contact(13, PROBE_STATE_OCCUPIED);
+    
+    train_change_switch(9, SWITCH_STATE_GREEN);
+    train_wait_for_contact(14, PROBE_STATE_OCCUPIED);
+    train_change_speed(0);
+    train_change_direction();
+    train_change_speed(5);
+    train_wait_for_contact(16, PROBE_STATE_OCCUPIED);
+    train_change_speed(0);
+    train_change_switch(9, SWITCH_STATE_RED);
 }
