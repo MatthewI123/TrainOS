@@ -15,7 +15,7 @@
 #define CONTACTS 16
 
 /// Number of attempts to try and locate the Zomboni.
-#define ATTEMPTS 1
+#define ATTEMPTS 15
 
 /// Possible Zomboni states.
 typedef enum zomboni_state_t
@@ -255,6 +255,7 @@ void train_handler_cfg1(int windowID, zomboni_state_t zomboni)
     }
 
     train_change_speed(5);
+    train_change_switch(2, SWITCH_STATE_RED);
     train_change_switch(5, SWITCH_STATE_RED);
     train_change_switch(6, SWITCH_STATE_GREEN);
     train_change_switch(7, SWITCH_STATE_RED);
@@ -262,6 +263,7 @@ void train_handler_cfg1(int windowID, zomboni_state_t zomboni)
     train_wait_for_contact(7, PROBE_STATE_EMPTY);
     sleep(5);
     train_change_switch(5, SWITCH_STATE_GREEN);
+    train_wait_for_contact(12, PROBE_STATE_OCCUPIED);
     sleep(15);
     train_change_speed(0);
     train_change_direction();
