@@ -1,6 +1,6 @@
 /** train.c
  * Train Application
- * Matthew Ibrahim (916771224)
+ * Matthew I
  */
 
 #include <kernel.h>

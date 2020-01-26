@@ -1,4 +1,4 @@
-// Matthew Ibrahim - 916771224
+// Matthew I - 916771224
 // to-do: window resizing?
 // to-do: refactor into multiple files after submission (ideally, implement a subset of the C stdlib)
 
@@ -110,7 +110,7 @@ int find(const char* buff, int size, char chr)
 int handle_command(int window_id, const char* buff, char* history[HISTORY_SIZE])
 {
 	if (k_memcmp(buff, "about", sizeof("about")) == 0) {
-		wm_print(window_id, "TOS Shell - Matthew Ibrahim\n");
+		wm_print(window_id, "TOS Shell - Matthew I\n");
 	} else if (k_memcmp(buff, "help", sizeof("help")) == 0) {
 		wm_print(window_id, "TOS Shell - Commands\n");
 		wm_print(window_id, "about  Displays information.\n");
